@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# local env overrides (.env.production is committed)
+.env
+.env.local
+.env.*.local
+
+.DS_Store
