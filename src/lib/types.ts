@@ -63,11 +63,21 @@ export interface SourcePayload {
   mode: "llm" | "extractive" | "extractive_fallback";
 }
 
+export type ClaimSupport =
+  | "supported"
+  | "partial"
+  | "unsupported"
+  | "uncited"
+  | "unmapped";
+
 export interface SentenceBinding {
   index: number;
   text: string;
   citations: number[];
   status: "cited" | "unmapped" | "uncited";
+  support: ClaimSupport;
+  overlap: number;
+  support_method: string;
 }
 
 export interface CitationReport {
@@ -80,6 +90,8 @@ export interface CitationReport {
   semantic_support: string;
   sentences: SentenceBinding[];
   uncited_count: number;
+  support_method: string;
+  support_counts: Record<string, number>;
 }
 
 export interface ChatMessage {
