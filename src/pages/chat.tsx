@@ -700,6 +700,9 @@ function CoverageAudit({
   const contradicted = sentences.filter(
     (sentence) => sentence.support === "contradicted",
   ).length;
+  const evidenceGap = sentences.filter(
+    (sentence) => sentence.support === "evidence_gap",
+  ).length;
   return (
     <div className="mt-4 grid gap-3 border-t border-line-100 pt-3 sm:grid-cols-2">
       {plan.length ? (
@@ -764,6 +767,7 @@ function CoverageAudit({
             {methodLabel(supportMethod)}）· 未标注 {uncited} 条
             {unsupported ? ` · 无依据 ${unsupported} 条` : ""}
             {contradicted ? ` · 矛盾 ${contradicted} 条` : ""}
+            {evidenceGap ? ` · 证据缺口 ${evidenceGap} 条` : ""}
           </p>
           <ul className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-auto pr-1">
             {sentences.map((sentence) => (
@@ -778,21 +782,11 @@ function CoverageAudit({
                     ? sentence.citations.map((index) => `E${index}`).join(" ")
                     : "—"}
                 </span>
-                <span
+                <div
                   className={cn(
                     "min-w-0",
                     sentence.status === "uncited" ? "text-n-550" : "text-n-700",
                   )}
-                  title={
-                    sentence.evidence_spans?.length
-                      ? sentence.evidence_spans
-                          .map(
-                            (span) =>
-                              `E${span.index} [${span.char_start},${span.char_end})：${span.quote}`,
-                          )
-                          .join("\n\n")
-                      : undefined
-                  }
                 >
                   {sentence.text}
                   {supportLabels[sentence.support] ? (
@@ -805,7 +799,27 @@ function CoverageAudit({
                       〔{supportLabels[sentence.support]?.label}〕
                     </span>
                   ) : null}
-                </span>
+                  {sentence.evidence_spans?.length ? (
+                    <details className="mt-0.5">
+                      <summary className="cursor-pointer text-[11px] tracking-cn text-primary underline-offset-2 hover:underline">
+                        证据跨度 {sentence.evidence_spans.length} 处
+                      </summary>
+                      <ul className="mt-1 flex flex-col gap-1 pl-3 text-[11px] leading-4 text-n-550">
+                        {sentence.evidence_spans.map((span) => (
+                          <li key={`${sentence.index}-${span.index}-${span.char_start}`}>
+                            <span className="font-mono tracking-num text-primary">
+                              E{span.index}
+                            </span>{" "}
+                            <span className="font-mono tracking-num text-n-450">
+                              [{span.char_start},{span.char_end})
+                            </span>
+                            ：{span.quote}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -819,6 +833,7 @@ function CitationStatus({ citations }: { citations: CitationReport }) {
   const uncited = citations.uncited_count ?? 0;
   const unsupported = citations.support_counts?.unsupported ?? 0;
   const contradicted = citations.support_counts?.contradicted ?? 0;
+  const evidenceGap = citations.support_counts?.evidence_gap ?? 0;
   const proxy = methodLabel(citations.support_method);
   if (citations.status === "mapped") {
     return (
@@ -836,6 +851,9 @@ function CitationStatus({ citations }: { citations: CitationReport }) {
           <StatusChip tone="danger">
             {contradicted} 条断言与证据矛盾（{proxy}）
           </StatusChip>
+        ) : null}
+        {evidenceGap ? (
+          <StatusChip>{evidenceGap} 条证据缺口说明</StatusChip>
         ) : null}
       </>
     );
