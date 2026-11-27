@@ -21,6 +21,7 @@ import type {
   ClaimSupport,
   ConditionPayload,
   CoverageConflict,
+  CoverageEvidenceStats,
   FacetPlanItem,
   SentenceBinding,
   SourcePayload,
@@ -586,6 +587,8 @@ function AssistantMessage({
               sentences={message.citations.sentences ?? []}
               conflicts={coverage?.conflicts ?? []}
               supportMethod={message.citations.support_method}
+              claimTotal={message.citations.claim_total}
+              evidenceStats={coverage?.evidence_stats}
             />
           ) : null}
         </>
@@ -686,23 +689,24 @@ function CoverageAudit({
   sentences,
   conflicts,
   supportMethod,
+  claimTotal,
+  evidenceStats,
 }: {
   plan: FacetPlanItem[];
   sentences: SentenceBinding[];
   conflicts: CoverageConflict[];
   supportMethod?: string;
+  claimTotal?: number;
+  evidenceStats?: CoverageEvidenceStats;
 }) {
   if (!plan.length && !sentences.length) return null;
   const uncited = sentences.filter((sentence) => sentence.status === "uncited").length;
-  const unsupported = sentences.filter(
-    (sentence) => sentence.support === "unsupported",
-  ).length;
-  const contradicted = sentences.filter(
-    (sentence) => sentence.support === "contradicted",
-  ).length;
-  const evidenceGap = sentences.filter(
-    (sentence) => sentence.support === "evidence_gap",
-  ).length;
+  const atoms = sentences.flatMap((sentence) =>
+    sentence.atoms?.length ? sentence.atoms : [sentence],
+  );
+  const unsupported = atoms.filter((atom) => atom.support === "unsupported").length;
+  const contradicted = atoms.filter((atom) => atom.support === "contradicted").length;
+  const evidenceGap = atoms.filter((atom) => atom.support === "evidence_gap").length;
   return (
     <div className="mt-4 grid gap-3 border-t border-line-100 pt-3 sm:grid-cols-2">
       {plan.length ? (
@@ -721,6 +725,9 @@ function CoverageAudit({
                 >
                   {facet.label}
                 </span>
+                {facet.kind === "subfacet" ? (
+                  <span className="text-[11px] text-n-450">子类</span>
+                ) : null}
                 <span className="font-mono tracking-num text-n-450">
                   {facet.primary_indices?.length
                     ? `主 ${facet.primary_indices.map((index) => `E${index}`).join("、")}`
@@ -736,9 +743,34 @@ function CoverageAudit({
                 {facet.status === "partial" ? (
                   <span className="text-[11px] text-n-450">仅辅助证据</span>
                 ) : null}
+                {facet.sufficiency === "sufficient" ? (
+                  <span className="text-[11px] text-success">证据充分</span>
+                ) : facet.sufficiency === "limited" ? (
+                  <span className="text-[11px] text-danger">证据有限</span>
+                ) : null}
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {evidenceStats ? (
+        <div className="sm:col-span-2">
+          <p className="text-xs font-medium tracking-cn text-n-550">证据来源与生命周期</p>
+          <p className="mt-1 text-[11px] leading-5 tracking-cn text-n-450">
+            交付 {evidenceStats.delivered_items} 条 · 独立文献{" "}
+            {evidenceStats.unique_documents} 篇 · 独立跨度{" "}
+            {evidenceStats.unique_evidence_spans} 处 · 重复率{" "}
+            {Math.round(evidenceStats.duplicate_evidence_rate * 100)}% · 来源多样性{" "}
+            {Math.round(evidenceStats.source_diversity * 100)}%
+          </p>
+          <p className="mt-0.5 font-mono text-[11px] tracking-num text-n-450">
+            检索 {evidenceStats.lifecycle.retrieved} → 分类{" "}
+            {evidenceStats.lifecycle.classified} → 适用性检查{" "}
+            {evidenceStats.lifecycle.scope_checked} → 合格{" "}
+            {evidenceStats.lifecycle.eligible} → 交付{" "}
+            {evidenceStats.lifecycle.delivered}
+          </p>
         </div>
       ) : null}
 
@@ -764,7 +796,8 @@ function CoverageAudit({
         <div>
           <p className="text-xs font-medium tracking-cn text-n-550">
             结论-证据核对（
-            {methodLabel(supportMethod)}）· 未标注 {uncited} 条
+            {methodLabel(supportMethod)}）· 原子断言 {claimTotal || atoms.length} 条 · 未标注{" "}
+            {uncited} 条
             {unsupported ? ` · 无依据 ${unsupported} 条` : ""}
             {contradicted ? ` · 矛盾 ${contradicted} 条` : ""}
             {evidenceGap ? ` · 证据缺口 ${evidenceGap} 条` : ""}
@@ -814,6 +847,30 @@ function CoverageAudit({
                               [{span.char_start},{span.char_end})
                             </span>
                             ：{span.quote}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
+                  {sentence.atoms?.length > 1 ? (
+                    <details className="mt-0.5">
+                      <summary className="cursor-pointer text-[11px] tracking-cn text-n-450 underline-offset-2 hover:underline">
+                        原子断言 {sentence.atoms.length} 条
+                      </summary>
+                      <ul className="mt-1 flex flex-col gap-0.5 pl-3 text-[11px] leading-4 text-n-550">
+                        {sentence.atoms.map((atom, atomIndex) => (
+                          <li key={`${sentence.index}-atom-${atomIndex}`}>
+                            {atom.text}
+                            {supportLabels[atom.support] ? (
+                              <span
+                                className={cn(
+                                  "ml-1 whitespace-nowrap",
+                                  supportLabels[atom.support]?.className,
+                                )}
+                              >
+                                〔{supportLabels[atom.support]?.label}〕
+                              </span>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

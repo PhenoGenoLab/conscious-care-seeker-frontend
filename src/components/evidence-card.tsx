@@ -6,9 +6,21 @@ import { CopyButton, StatusChip, cn } from "./ui";
 
 const bucketLabels: Record<EvidenceItem["bucket"], string> = {
   primary_support: "直接支持",
+  indirect_support: "间接支持",
   background: "背景",
   applicability_unknown: "条件待定",
   comparative: "比较材料",
+  non_supporting: "不可支持",
+};
+
+const directnessTone: Record<
+  EvidenceItem["directness"],
+  "success" | "neutral" | "danger"
+> = {
+  direct: "success",
+  indirect: "neutral",
+  contextual: "neutral",
+  non_supporting: "danger",
 };
 
 const applicability: Record<
@@ -73,6 +85,9 @@ export function EvidenceCard({ item }: { item: EvidenceItem }) {
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 pt-3">
         <span className="font-code text-xs tracking-num text-primary">E{item.index}</span>
         <StatusChip tone={status.tone}>{status.label}</StatusChip>
+        <StatusChip tone={directnessTone[item.directness]}>
+          {item.directness_label}
+        </StatusChip>
         <span className="text-xs tracking-cn text-n-450">{bucketLabels[item.bucket]}</span>
         {roleText ? (
           <span className="min-w-0 truncate text-xs tracking-cn text-n-450">

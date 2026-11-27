@@ -27,10 +27,29 @@ export interface EvidenceItem {
   page_end: number;
   char_start: number;
   char_end: number;
-  bucket: "primary_support" | "background" | "applicability_unknown" | "comparative";
+  bucket:
+    | "primary_support"
+    | "indirect_support"
+    | "background"
+    | "applicability_unknown"
+    | "comparative"
+    | "non_supporting";
   role_status: string;
   applicability: "Applicable" | "Unknown" | "Inapplicable";
   applicability_axes: ApplicabilityAxis[];
+  directness: "direct" | "indirect" | "contextual" | "non_supporting";
+  directness_label: string;
+  source_kind:
+    | "guideline"
+    | "consensus"
+    | "systematic_review"
+    | "narrative_review"
+    | "primary_study"
+    | "reference_list"
+    | "abbreviations"
+    | "front_matter"
+    | "other";
+  directness_reasons: string[];
   roles: string[];
   conditions: Record<string, string[]>;
   direct_support: boolean;
@@ -42,10 +61,12 @@ export interface FacetPlanItem {
   facet_id: string;
   label: string;
   required: boolean;
+  kind: "core" | "subfacet";
   evidence_indices: number[];
   primary_indices: number[];
   supporting_indices: number[];
   status: "covered" | "partial" | "missing";
+  sufficiency: "unknown" | "missing" | "limited" | "moderate" | "sufficient";
   triggers: string[];
 }
 
@@ -57,6 +78,30 @@ export interface CoverageConflict {
   overlap: number;
 }
 
+export interface InterventionPlanItem {
+  category_id: string;
+  label: string;
+  evidence_indices: number[];
+  direct_indices: number[];
+  status: "covered" | "indirect_only" | "missing";
+}
+
+export interface CoverageEvidenceStats {
+  delivered_items: number;
+  unique_documents: number;
+  unique_evidence_spans: number;
+  duplicate_evidence_rate: number;
+  source_diversity: number;
+  per_facet_source_coverage: Record<string, number>;
+  lifecycle: {
+    retrieved: number;
+    classified: number;
+    scope_checked: number;
+    eligible: number;
+    delivered: number;
+  };
+}
+
 export interface Coverage {
   facets: string[];
   uncovered_facets: string[];
@@ -64,6 +109,18 @@ export interface Coverage {
   incomplete_reasons: string[];
   facet_plan: FacetPlanItem[];
   conflicts: CoverageConflict[];
+  conditions: Record<string, string[]>;
+  intervention_plan: InterventionPlanItem[];
+  evidence_stats: CoverageEvidenceStats;
+}
+
+export interface QueryConstraint {
+  axis: "population" | "phase" | "etiology" | "intervention";
+  value: string;
+  matched_text: string;
+  char_start: number;
+  char_end: number;
+  source: "question" | "explicit";
 }
 
 export interface SourcePayload {
@@ -72,6 +129,8 @@ export interface SourcePayload {
   trace: Array<Record<string, unknown>>;
   fingerprint: string;
   mode: "llm" | "extractive" | "extractive_fallback";
+  conditions: Record<string, string[]>;
+  constraints: QueryConstraint[];
 }
 
 export type ClaimSupport =
@@ -93,6 +152,15 @@ export interface EvidenceSpan {
   score: number;
 }
 
+export interface AtomBinding {
+  text: string;
+  support: ClaimSupport;
+  overlap: number;
+  reason: string;
+  kind: "fact" | "evidence_gap";
+  evidence_spans: EvidenceSpan[];
+}
+
 export interface SentenceBinding {
   index: number;
   text: string;
@@ -104,6 +172,7 @@ export interface SentenceBinding {
   kind: "fact" | "evidence_gap";
   reason: string;
   evidence_spans: EvidenceSpan[];
+  atoms: AtomBinding[];
 }
 
 export interface CitationReport {
@@ -118,6 +187,8 @@ export interface CitationReport {
   uncited_count: number;
   support_method: string;
   support_counts: Record<string, number>;
+  sentence_counts: Record<string, number>;
+  claim_total: number;
 }
 
 export interface ThinkingItem {
