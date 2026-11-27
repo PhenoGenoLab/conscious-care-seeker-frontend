@@ -769,7 +769,10 @@ function CoverageAudit({
             断言 {contract.counts.claims ?? contract.claims.length} · 有证据跨度{" "}
             {contract.counts.with_evidence ?? 0} · 直接证据{" "}
             {contract.counts.with_direct_evidence ?? 0} · 无证据{" "}
-            {contract.counts.without_evidence ?? 0}
+            {contract.counts.without_evidence ?? 0} · 映射{" "}
+            {contract.counts.mapped_claims ?? 0} · 未映射{" "}
+            {contract.counts.unmapped_claims ?? 0} · 适用范围匹配{" "}
+            {contract.counts.scope_matched ?? 0}
           </p>
           <ul className="mt-1.5 flex max-h-52 flex-col gap-1 overflow-auto pr-1">
             {contract.claims.map((claim) => (
@@ -778,7 +781,9 @@ function CoverageAudit({
                 {claim.text}
                 <span className="ml-1 whitespace-nowrap text-n-450">
                   〔{supportLabels[claim.status]?.label ?? claim.status} ·{" "}
-                  {claim.support_level} · {claim.source_roles.join("/") || "无来源"}〕
+                  {claim.claim_type} · {claim.evidence_mapping_status} ·{" "}
+                  {claim.scope_match} · {claim.support_level} ·{" "}
+                  {claim.source_roles.join("/") || "无来源"}〕
                 </span>
                 {claim.limitations.length ? (
                   <span className="ml-1 text-n-450">
@@ -791,13 +796,19 @@ function CoverageAudit({
           {contract.traceability.length ? (
             <details className="mt-1">
               <summary className="cursor-pointer text-[11px] tracking-cn text-n-450 underline-offset-2 hover:underline">
-                原始研究溯源 {contract.traceability.length} 条（本地匹配）
+                溯源候选 {contract.counts.trace_links ?? contract.traceability.length} 条
+                （本地解析，不等于原始研究已验证）
               </summary>
               <p className="mt-1 text-[11px] text-n-450">
-                命中{" "}
-                {contract.traceability.filter((link) => link.status === "matched_in_store").length}{" "}
-                · 未命中{" "}
-                {contract.traceability.filter((link) => link.status === "unresolved").length}
+                题录解析{" "}
+                {(contract.counts.trace_unresolved ?? 0) +
+                  (contract.counts.trace_matched_in_store ?? 0)}{" "}
+                · 本地定位{" "}
+                {contract.counts.trace_matched_in_store ?? 0} · 未命中{" "}
+                {contract.counts.trace_unresolved ?? 0} · 全文获取{" "}
+                {contract.counts.trace_full_text ?? 0} · PICO 核验{" "}
+                {contract.counts.trace_pico_verified ?? 0} · Claim 支持核验{" "}
+                {contract.counts.trace_claim_support_verified ?? 0}
               </p>
               <ul className="mt-1 flex flex-col gap-0.5 pl-3 text-[11px] leading-4 text-n-550">
                 {contract.traceability.slice(0, 8).map((link, index) => (
@@ -821,7 +832,21 @@ function CoverageAudit({
             {evidenceStats.unique_documents} 篇 · 独立跨度{" "}
             {evidenceStats.unique_evidence_spans} 处 · 重复率{" "}
             {Math.round(evidenceStats.duplicate_evidence_rate * 100)}% · 来源多样性{" "}
-            {Math.round(evidenceStats.source_diversity * 100)}%
+            {Math.round(evidenceStats.source_diversity * 100)}% · 最大来源占比{" "}
+            {Math.round(evidenceStats.top_source_share * 100)}% · 来源集中度{" "}
+            {evidenceStats.source_concentration.toFixed(2)} · 原始研究占比{" "}
+            {Math.round(evidenceStats.primary_study_share * 100)}%
+          </p>
+          <p className="mt-0.5 font-mono text-[11px] tracking-num text-n-450">
+            适用范围：可适用 {evidenceStats.scope.applicable} · 未知{" "}
+            {evidenceStats.scope.unknown} · 不适用{" "}
+            {evidenceStats.scope.inapplicable} · 直接证据{" "}
+            {evidenceStats.scope.direct} · 间接证据{" "}
+            {evidenceStats.scope.indirect} · 背景{" "}
+            {evidenceStats.scope.contextual}
+          </p>
+          <p className="mt-0.5 font-mono text-[11px] tracking-num text-n-450">
+            独立队列：未评估（缺少队列标识）
           </p>
           <p className="mt-0.5 font-mono text-[11px] tracking-num text-n-450">
             检索 {evidenceStats.lifecycle.retrieved} → 分类{" "}
@@ -836,7 +861,7 @@ function CoverageAudit({
       {conflicts.length ? (
         <div className="sm:col-span-2">
           <p className="text-xs font-medium tracking-cn text-danger">
-            证据间潜在矛盾（需并列呈现）
+            来源间结论冲突（需并列呈现，不等同于断言被反驳）
           </p>
           <ul className="mt-1.5 flex flex-col gap-1">
             {conflicts.map((conflict, index) => (
@@ -965,7 +990,7 @@ function CitationStatus({ citations }: { citations: CitationReport }) {
         ) : null}
         {contradicted ? (
           <StatusChip tone="danger">
-            {contradicted} 条断言与证据矛盾（{proxy}）
+            {contradicted} 条断言被引用证据反驳（{proxy}）
           </StatusChip>
         ) : null}
         {evidenceGap ? (

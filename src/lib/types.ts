@@ -92,7 +92,19 @@ export interface CoverageEvidenceStats {
   unique_evidence_spans: number;
   duplicate_evidence_rate: number;
   source_diversity: number;
+  top_source_share: number;
+  source_concentration: number;
+  primary_study_share: number;
+  independent_cohort_count: number | null;
   per_facet_source_coverage: Record<string, number>;
+  scope: {
+    applicable: number;
+    unknown: number;
+    inapplicable: number;
+    direct: number;
+    indirect: number;
+    contextual: number;
+  };
   lifecycle: {
     retrieved: number;
     classified: number;
@@ -228,6 +240,16 @@ export interface ContractClaim {
   method: string;
   reason: string;
   support_level: "direct" | "indirect" | "contextual" | "non_supporting" | "none";
+  claim_type:
+    | "clinical_fact"
+    | "recommendation"
+    | "study_finding"
+    | "scope_inference"
+    | "evidence_limitation"
+    | "evidence_gap"
+    | "mixed";
+  evidence_mapping_status: "mapped" | "unmapped" | "insufficient";
+  scope_match: "matched" | "partial" | "mismatched" | "unknown";
   source_roles: string[];
   limitations: string[];
   evidence: EvidenceRef[];
@@ -245,6 +267,7 @@ export interface ContractFacet {
 
 export interface TraceLink {
   status: "matched_in_store" | "unresolved" | "no_reference_list";
+  stage: "citation_mention" | "reference_parsed" | "primary_study_located";
   consensus_evidence_index: number | null;
   consensus_anchor_id: number | null;
   reference_title: string;
