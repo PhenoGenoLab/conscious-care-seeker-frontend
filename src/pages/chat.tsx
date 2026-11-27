@@ -20,6 +20,7 @@ import type {
   CitationReport,
   ClaimSupport,
   ConditionPayload,
+  CoverageConflict,
   FacetPlanItem,
   SentenceBinding,
   SourcePayload,
@@ -428,6 +429,9 @@ function AssistantMessage({
     ...(unbound.length
       ? [`证据未覆盖：${unbound.map((facet) => facet.label).join("、")}`]
       : []),
+    ...(coverage?.conflicts?.length
+      ? [`证据间矛盾 ${coverage.conflicts.length} 处`]
+      : []),
   ].join(" · ");
 
   return (
@@ -475,6 +479,7 @@ function AssistantMessage({
             <CoverageAudit
               plan={plan}
               sentences={message.citations.sentences ?? []}
+              conflicts={coverage?.conflicts ?? []}
               supportMethod={message.citations.support_method}
             />
           ) : null}
@@ -560,22 +565,35 @@ const supportLabels: Partial<
 > = {
   supported: { label: "支持", className: "text-n-450" },
   partial: { label: "部分支持", className: "text-n-550" },
+  contradicted: { label: "与证据矛盾", className: "font-medium text-danger" },
   unsupported: { label: "无依据", className: "font-medium text-danger" },
+  evidence_gap: { label: "证据缺口", className: "text-n-550" },
 };
+
+function methodLabel(method?: string): string {
+  if (method === "llm-v1") return "LLM 判定";
+  if (method === "lexical-span-v2") return "词汇＋跨度代理";
+  return "词汇代理";
+}
 
 function CoverageAudit({
   plan,
   sentences,
+  conflicts,
   supportMethod,
 }: {
   plan: FacetPlanItem[];
   sentences: SentenceBinding[];
+  conflicts: CoverageConflict[];
   supportMethod?: string;
 }) {
   if (!plan.length && !sentences.length) return null;
   const uncited = sentences.filter((sentence) => sentence.status === "uncited").length;
   const unsupported = sentences.filter(
     (sentence) => sentence.support === "unsupported",
+  ).length;
+  const contradicted = sentences.filter(
+    (sentence) => sentence.support === "contradicted",
   ).length;
   return (
     <div className="mt-4 grid gap-3 border-t border-line-100 pt-3 sm:grid-cols-2">
@@ -596,10 +614,38 @@ function CoverageAudit({
                   {facet.label}
                 </span>
                 <span className="font-mono tracking-num text-n-450">
-                  {facet.evidence_indices.length
-                    ? facet.evidence_indices.map((index) => `E${index}`).join("、")
-                    : "无候选证据"}
+                  {facet.primary_indices?.length
+                    ? `主 ${facet.primary_indices.map((index) => `E${index}`).join("、")}`
+                    : ""}
+                  {facet.primary_indices?.length && facet.supporting_indices?.length
+                    ? " · "
+                    : ""}
+                  {facet.supporting_indices?.length
+                    ? `辅 ${facet.supporting_indices.map((index) => `E${index}`).join("、")}`
+                    : ""}
+                  {!facet.evidence_indices.length ? "无候选证据" : ""}
                 </span>
+                {facet.status === "partial" ? (
+                  <span className="text-[11px] text-n-450">仅辅助证据</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {conflicts.length ? (
+        <div className="sm:col-span-2">
+          <p className="text-xs font-medium tracking-cn text-danger">
+            证据间潜在矛盾（需并列呈现）
+          </p>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {conflicts.map((conflict, index) => (
+              <li key={`${conflict.left_index}-${conflict.right_index}-${index}`} className="text-xs leading-5 text-n-700">
+                <span className="font-mono text-primary">
+                  E{conflict.left_index} vs E{conflict.right_index}
+                </span>{" "}
+                ：{conflict.left_quote} ↔ {conflict.right_quote}
               </li>
             ))}
           </ul>
@@ -610,9 +656,9 @@ function CoverageAudit({
         <div>
           <p className="text-xs font-medium tracking-cn text-n-550">
             结论-证据核对（
-            {supportMethod === "llm-v1" ? "LLM 判定" : "词汇代理"}）· 未标注{" "}
-            {uncited} 条
+            {methodLabel(supportMethod)}）· 未标注 {uncited} 条
             {unsupported ? ` · 无依据 ${unsupported} 条` : ""}
+            {contradicted ? ` · 矛盾 ${contradicted} 条` : ""}
           </p>
           <ul className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-auto pr-1">
             {sentences.map((sentence) => (
@@ -632,6 +678,16 @@ function CoverageAudit({
                     "min-w-0",
                     sentence.status === "uncited" ? "text-n-550" : "text-n-700",
                   )}
+                  title={
+                    sentence.evidence_spans?.length
+                      ? sentence.evidence_spans
+                          .map(
+                            (span) =>
+                              `E${span.index} [${span.char_start},${span.char_end})：${span.quote}`,
+                          )
+                          .join("\n\n")
+                      : undefined
+                  }
                 >
                   {sentence.text}
                   {supportLabels[sentence.support] ? (
@@ -657,7 +713,8 @@ function CoverageAudit({
 function CitationStatus({ citations }: { citations: CitationReport }) {
   const uncited = citations.uncited_count ?? 0;
   const unsupported = citations.support_counts?.unsupported ?? 0;
-  const proxy = citations.support_method === "llm-v1" ? "LLM" : "词汇";
+  const contradicted = citations.support_counts?.contradicted ?? 0;
+  const proxy = methodLabel(citations.support_method);
   if (citations.status === "mapped") {
     return (
       <>
@@ -668,6 +725,11 @@ function CitationStatus({ citations }: { citations: CitationReport }) {
         {unsupported ? (
           <StatusChip tone="danger">
             {unsupported} 条断言无证据支持（{proxy}）
+          </StatusChip>
+        ) : null}
+        {contradicted ? (
+          <StatusChip tone="danger">
+            {contradicted} 条断言与证据矛盾（{proxy}）
           </StatusChip>
         ) : null}
       </>
