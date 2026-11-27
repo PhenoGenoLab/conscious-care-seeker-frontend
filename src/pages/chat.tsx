@@ -18,6 +18,7 @@ import { coverageReason, missingFacets } from "@/lib/labels";
 import type {
   ChatMessage,
   CitationReport,
+  ClaimSupport,
   ConditionPayload,
   FacetPlanItem,
   SentenceBinding,
@@ -471,7 +472,11 @@ function AssistantMessage({
             <Markdown>{message.content}</Markdown>
           </div>
           {message.citations ? (
-            <CoverageAudit plan={plan} sentences={message.citations.sentences ?? []} />
+            <CoverageAudit
+              plan={plan}
+              sentences={message.citations.sentences ?? []}
+              supportMethod={message.citations.support_method}
+            />
           ) : null}
         </>
       ) : message.pending ? (
@@ -550,15 +555,28 @@ function AssistantMessage({
   );
 }
 
+const supportLabels: Partial<
+  Record<ClaimSupport, { label: string; className: string }>
+> = {
+  supported: { label: "支持", className: "text-n-450" },
+  partial: { label: "部分支持", className: "text-n-550" },
+  unsupported: { label: "无依据", className: "font-medium text-danger" },
+};
+
 function CoverageAudit({
   plan,
   sentences,
+  supportMethod,
 }: {
   plan: FacetPlanItem[];
   sentences: SentenceBinding[];
+  supportMethod?: string;
 }) {
   if (!plan.length && !sentences.length) return null;
   const uncited = sentences.filter((sentence) => sentence.status === "uncited").length;
+  const unsupported = sentences.filter(
+    (sentence) => sentence.support === "unsupported",
+  ).length;
   return (
     <div className="mt-4 grid gap-3 border-t border-line-100 pt-3 sm:grid-cols-2">
       {plan.length ? (
@@ -591,7 +609,10 @@ function CoverageAudit({
       {sentences.length ? (
         <div>
           <p className="text-xs font-medium tracking-cn text-n-550">
-            结论-证据核对 · 未标注 {uncited} 条
+            结论-证据核对（
+            {supportMethod === "llm-v1" ? "LLM 判定" : "词汇代理"}）· 未标注{" "}
+            {uncited} 条
+            {unsupported ? ` · 无依据 ${unsupported} 条` : ""}
           </p>
           <ul className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-auto pr-1">
             {sentences.map((sentence) => (
@@ -613,6 +634,16 @@ function CoverageAudit({
                   )}
                 >
                   {sentence.text}
+                  {supportLabels[sentence.support] ? (
+                    <span
+                      className={cn(
+                        "ml-1 whitespace-nowrap text-[11px]",
+                        supportLabels[sentence.support]?.className,
+                      )}
+                    >
+                      〔{supportLabels[sentence.support]?.label}〕
+                    </span>
+                  ) : null}
                 </span>
               </li>
             ))}
@@ -625,6 +656,8 @@ function CoverageAudit({
 
 function CitationStatus({ citations }: { citations: CitationReport }) {
   const uncited = citations.uncited_count ?? 0;
+  const unsupported = citations.support_counts?.unsupported ?? 0;
+  const proxy = citations.support_method === "llm-v1" ? "LLM" : "词汇";
   if (citations.status === "mapped") {
     return (
       <>
@@ -632,6 +665,11 @@ function CitationStatus({ citations }: { citations: CitationReport }) {
           引用可回指 {citations.mapped_indices.length} 条
         </StatusChip>
         {uncited ? <StatusChip tone="danger">{uncited} 条结论未标注证据</StatusChip> : null}
+        {unsupported ? (
+          <StatusChip tone="danger">
+            {unsupported} 条断言无证据支持（{proxy}）
+          </StatusChip>
+        ) : null}
       </>
     );
   }
