@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import {
   Button,
-  ConfirmDialog,
   EmptyState,
   SectionHeader,
   Spinner,
@@ -36,12 +35,8 @@ export function LibraryPage() {
   const [loadError, setLoadError] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [announcement, setAnnouncement] = useState("");
-  const [target, setTarget] = useState<DocumentSummary | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
   const draggingDepth = useRef(0);
 
   const refresh = useCallback(async (initial = false) => {
@@ -95,25 +90,6 @@ export function LibraryPage() {
       setAnnouncement("导入失败");
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function remove() {
-    if (!target || deleting) return;
-    setDeleting(true);
-    setDeleteError("");
-    try {
-      const response = await api.deleteDocument(target.source_id);
-      setStats(response.stats);
-      setTarget(null);
-      setResults([]);
-      await refresh();
-      setAnnouncement(`已删除来源 ${target.title}`);
-      requestAnimationFrame(() => headingRef.current?.focus());
-    } catch (cause) {
-      setDeleteError((cause as Error).message);
-    } finally {
-      setDeleting(false);
     }
   }
 
@@ -266,8 +242,6 @@ export function LibraryPage() {
       <section className="rounded-panel bg-surface p-6 sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2
-            ref={headingRef}
-            tabIndex={-1}
             className="scroll-mt-24 text-xl font-semibold tracking-title text-n-950 outline-none"
           >
             知识库来源
@@ -314,7 +288,6 @@ export function LibraryPage() {
                   <th className="hidden w-[150px] border-b border-line-200 px-6 pb-2 text-left font-normal md:table-cell">
                     入库时间
                   </th>
-                  <th className="border-b border-line-200 pb-2 pl-6 text-right font-normal">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -338,20 +311,6 @@ export function LibraryPage() {
                     <td className="hidden border-b border-line-100 px-6 py-3 font-mono text-xs tracking-num whitespace-nowrap tabular-nums text-n-450 md:table-cell">
                       {formatDate(document.ingested_at)}
                     </td>
-                    <td className="border-b border-line-100 py-3 pl-6 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`删除来源 ${document.title}`}
-                        onClick={() => {
-                          setDeleteError("");
-                          setTarget(document);
-                        }}
-                        className="h-11 text-n-700 hover:border-danger/40 hover:text-danger sm:h-8"
-                      >
-                        删除
-                      </Button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -372,32 +331,6 @@ export function LibraryPage() {
           </div>
         )}
       </section>
-
-      <ConfirmDialog
-        open={target !== null}
-        title="删除这个来源？"
-        description={
-          target ? (
-            <>
-              <span className="font-medium text-n-950">{target.title}</span>（
-              <span className="font-mono text-xs">{target.source_id}</span>）及其{" "}
-              {target.chunk_count} 个证据片段、锚点、条件与向量投影都会被删除，无法撤销。
-            </>
-          ) : (
-            ""
-          )
-        }
-        confirmLabel="删除来源"
-        pending={deleting}
-        error={deleteError}
-        onConfirm={() => void remove()}
-        onClose={() => {
-          if (!deleting) {
-            setTarget(null);
-            setDeleteError("");
-          }
-        }}
-      />
     </div>
   );
 }
