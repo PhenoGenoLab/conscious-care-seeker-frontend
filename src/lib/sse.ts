@@ -13,6 +13,23 @@ export interface ChatRequest {
   k?: number;
 }
 
+const READ_TIMEOUT_MS = 180_000;
+
+async function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  const { promise: timeout, reject } = Promise.withResolvers<never>();
+  const timer = setTimeout(
+    () => reject(new Error("等待服务响应超时，连接可能已中断")),
+    READ_TIMEOUT_MS,
+  );
+  try {
+    return await Promise.race([reader.read(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function* streamChat(
   payload: ChatRequest,
   signal?: AbortSignal,
@@ -32,9 +49,15 @@ export async function* streamChat(
   let buffer = "";
 
   while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await readWithTimeout(reader);
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    }
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
     let boundary = buffer.indexOf("\n\n");
     while (boundary >= 0) {
       const block = buffer.slice(0, boundary);
