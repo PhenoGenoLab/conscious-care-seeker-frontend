@@ -22,6 +22,7 @@ import type {
   ConditionPayload,
   CoverageConflict,
   CoverageEvidenceStats,
+  EvidenceContract,
   FacetPlanItem,
   SentenceBinding,
   SourcePayload,
@@ -223,6 +224,7 @@ export function ChatPage() {
           finished = true;
           patchMessage(assistantId, {
             citations: event.data.citations as CitationReport,
+            evidenceContract: event.data.evidence_contract as EvidenceContract,
             mode: String(event.data.mode ?? ""),
             pending: false,
           });
@@ -589,6 +591,7 @@ function AssistantMessage({
               supportMethod={message.citations.support_method}
               claimTotal={message.citations.claim_total}
               evidenceStats={coverage?.evidence_stats}
+              contract={message.evidenceContract}
             />
           ) : null}
         </>
@@ -680,6 +683,7 @@ const supportLabels: Partial<
 
 function methodLabel(method?: string): string {
   if (method === "llm-v1") return "LLM 判定";
+  if (method === "nli-v1") return "NLI 判定";
   if (method === "lexical-span-v2") return "词汇＋跨度代理";
   return "词汇代理";
 }
@@ -691,6 +695,7 @@ function CoverageAudit({
   supportMethod,
   claimTotal,
   evidenceStats,
+  contract,
 }: {
   plan: FacetPlanItem[];
   sentences: SentenceBinding[];
@@ -698,6 +703,7 @@ function CoverageAudit({
   supportMethod?: string;
   claimTotal?: number;
   evidenceStats?: CoverageEvidenceStats;
+  contract?: EvidenceContract;
 }) {
   if (!plan.length && !sentences.length) return null;
   const uncited = sentences.filter((sentence) => sentence.status === "uncited").length;
@@ -751,6 +757,59 @@ function CoverageAudit({
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {contract ? (
+        <div className="sm:col-span-2">
+          <p className="text-xs font-medium tracking-cn text-n-550">
+            Claim → EvidenceSpan → SourceRole → Sufficiency（{contract.version}）
+          </p>
+          <p className="mt-1 font-mono text-[11px] tracking-num text-n-450">
+            断言 {contract.counts.claims ?? contract.claims.length} · 有证据跨度{" "}
+            {contract.counts.with_evidence ?? 0} · 直接证据{" "}
+            {contract.counts.with_direct_evidence ?? 0} · 无证据{" "}
+            {contract.counts.without_evidence ?? 0}
+          </p>
+          <ul className="mt-1.5 flex max-h-52 flex-col gap-1 overflow-auto pr-1">
+            {contract.claims.map((claim) => (
+              <li key={claim.claim_id} className="text-[11px] leading-5 text-n-700">
+                <span className="font-mono tracking-num text-primary">{claim.claim_id}</span>{" "}
+                {claim.text}
+                <span className="ml-1 whitespace-nowrap text-n-450">
+                  〔{supportLabels[claim.status]?.label ?? claim.status} ·{" "}
+                  {claim.support_level} · {claim.source_roles.join("/") || "无来源"}〕
+                </span>
+                {claim.limitations.length ? (
+                  <span className="ml-1 text-n-450">
+                    {claim.limitations.join("、")}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {contract.traceability.length ? (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-[11px] tracking-cn text-n-450 underline-offset-2 hover:underline">
+                原始研究溯源 {contract.traceability.length} 条（本地匹配）
+              </summary>
+              <p className="mt-1 text-[11px] text-n-450">
+                命中{" "}
+                {contract.traceability.filter((link) => link.status === "matched_in_store").length}{" "}
+                · 未命中{" "}
+                {contract.traceability.filter((link) => link.status === "unresolved").length}
+              </p>
+              <ul className="mt-1 flex flex-col gap-0.5 pl-3 text-[11px] leading-4 text-n-550">
+                {contract.traceability.slice(0, 8).map((link, index) => (
+                  <li key={`${link.status}-${index}`}>
+                    {link.status === "matched_in_store"
+                      ? `✓ ${link.primary_source_id} ← ${link.reference_title || link.doi}`
+                      : `· ${link.reference_title || link.doi || link.pmid || "未识别题录"}（${link.reason}）`}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
         </div>
       ) : null}
 

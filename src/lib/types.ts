@@ -204,12 +204,74 @@ export interface ThinkingNode {
   items: ThinkingItem[];
 }
 
+export interface EvidenceRef {
+  evidence_index: number;
+  anchor_id: number;
+  source_id: string;
+  source_role: string;
+  directness: string;
+  applicability: string;
+  char_start: number;
+  char_end: number;
+  quote: string;
+  source_char_start?: number;
+  source_char_end?: number;
+}
+
+export interface ContractClaim {
+  claim_id: string;
+  sentence_index: number;
+  atom_index: number;
+  text: string;
+  kind: "fact" | "evidence_gap";
+  status: ClaimSupport;
+  method: string;
+  reason: string;
+  support_level: "direct" | "indirect" | "contextual" | "non_supporting" | "none";
+  source_roles: string[];
+  limitations: string[];
+  evidence: EvidenceRef[];
+}
+
+export interface ContractFacet {
+  facet_id: string;
+  label: string;
+  kind: "core" | "subfacet";
+  status: "covered" | "partial" | "missing";
+  sufficiency: "unknown" | "missing" | "limited" | "moderate" | "sufficient";
+  primary_indices: number[];
+  supporting_indices: number[];
+}
+
+export interface TraceLink {
+  status: "matched_in_store" | "unresolved" | "no_reference_list";
+  consensus_evidence_index: number | null;
+  consensus_anchor_id: number | null;
+  reference_title: string;
+  doi: string;
+  pmid: string;
+  year: string;
+  primary_source_id: string;
+  primary_anchor_id: number | null;
+  primary_quote: string;
+  reason: string;
+}
+
+export interface EvidenceContract {
+  version: string;
+  counts: Record<string, number>;
+  claims: ContractClaim[];
+  facets: ContractFacet[];
+  traceability: TraceLink[];
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: SourcePayload;
   citations?: CitationReport;
+  evidenceContract?: EvidenceContract;
   thinking?: ThinkingNode[];
   mode?: string;
   pending?: boolean;
