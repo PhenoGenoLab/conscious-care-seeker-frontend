@@ -120,12 +120,26 @@ export interface CitationReport {
   support_counts: Record<string, number>;
 }
 
+export interface ThinkingItem {
+  label: string;
+  value: string;
+}
+
+export interface ThinkingNode {
+  id: string;
+  title: string;
+  status: "running" | "done" | "error";
+  summary: string;
+  items: ThinkingItem[];
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: SourcePayload;
   citations?: CitationReport;
+  thinking?: ThinkingNode[];
   mode?: string;
   pending?: boolean;
   stopped?: boolean;

@@ -24,6 +24,7 @@ import type {
   FacetPlanItem,
   SentenceBinding,
   SourcePayload,
+  ThinkingNode,
 } from "@/lib/types";
 
 const SUGGESTIONS = [
@@ -189,6 +190,25 @@ export function ChatPage() {
             sources: event.data as unknown as SourcePayload,
             mode: String(event.data.mode ?? ""),
           });
+        } else if (event.event === "thinking") {
+          const incoming = event.data as unknown as ThinkingNode;
+          setMessages((current) =>
+            current.map((message) => {
+              if (message.id !== assistantId) return message;
+              const nodes = message.thinking ?? [];
+              const at = nodes.findIndex((node) => node.id === incoming.id);
+              return {
+                ...message,
+                thinking:
+                  at >= 0
+                    ? nodes.map((node, index) => (index === at ? incoming : node))
+                    : [...nodes, incoming],
+              };
+            }),
+          );
+          if (incoming.status === "running") {
+            setAnnouncement(`${incoming.title}：${incoming.summary}`);
+          }
         } else if (event.event === "delta") {
           const text = String(event.data.text ?? "");
           setMessages((current) =>
@@ -408,6 +428,89 @@ export function ChatPage() {
   );
 }
 
+function ThinkingPanel({
+  nodes,
+  pending,
+}: {
+  nodes: ThinkingNode[];
+  pending?: boolean;
+}) {
+  const [open, setOpen] = useState(Boolean(pending));
+  useEffect(() => {
+    if (pending) setOpen(true);
+  }, [pending]);
+  if (!nodes.length) return null;
+  const active = nodes.find((node) => node.status === "running") ?? nodes[nodes.length - 1];
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="mt-3 rounded-tip border border-line-100 bg-n-150/40"
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-xs tracking-cn [&::-webkit-details-marker]:hidden">
+        {pending ? (
+          <Spinner className="size-3 text-primary" />
+        ) : (
+          <Icon name="check" className="h-3.5 w-3.5 text-success" />
+        )}
+        <span className="font-medium text-n-800">思考过程</span>
+        <span className="min-w-0 truncate text-n-550">
+          {active.title} · {active.summary}
+        </span>
+        <span className="ml-auto font-mono tracking-num text-n-450">
+          {nodes.length} 个节点
+        </span>
+        <Icon name="chevronDown" className="h-3.5 w-3.5 text-n-450" />
+      </summary>
+      <ol className="flex flex-col gap-2 border-t border-line-100 px-3 py-2.5">
+        {nodes.map((node, index) => (
+          <li key={node.id} className="flex gap-2">
+            <span className="mt-0.5 flex w-2 shrink-0 justify-center">
+              {node.status === "running" ? (
+                <Spinner className="size-2.5 text-primary" />
+              ) : node.status === "error" ? (
+                <Icon name="alert" className="h-3 w-3 text-danger" />
+              ) : (
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    index === nodes.length - 1 ? "bg-success" : "bg-n-450",
+                  )}
+                />
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-xs font-medium text-n-800">{node.title}</span>
+                <span className="text-[11px] text-n-450">
+                  {node.status === "running"
+                    ? "进行中"
+                    : node.status === "error"
+                      ? "失败"
+                      : "完成"}
+                </span>
+              </div>
+              <p className="text-xs leading-5 text-n-550">{node.summary}</p>
+              {node.items.length ? (
+                <dl className="mt-1 grid gap-x-3 gap-y-0.5 text-[11px] leading-4 sm:grid-cols-2">
+                  {node.items.map((item) => (
+                    <div key={`${node.id}-${item.label}`} className="flex min-w-0 gap-1">
+                      <dt className="shrink-0 text-n-450">{item.label}</dt>
+                      <dd className="min-w-0 truncate text-n-700" title={item.value}>
+                        {item.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 function AssistantMessage({
   message,
   onReuse,
@@ -469,6 +572,8 @@ function AssistantMessage({
           ) : null}
         </div>
       ) : null}
+
+      <ThinkingPanel nodes={message.thinking ?? []} pending={message.pending} />
 
       {message.content ? (
         <>
