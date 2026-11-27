@@ -43,8 +43,18 @@ export interface FacetPlanItem {
   label: string;
   required: boolean;
   evidence_indices: number[];
-  status: "covered" | "missing";
+  primary_indices: number[];
+  supporting_indices: number[];
+  status: "covered" | "partial" | "missing";
   triggers: string[];
+}
+
+export interface CoverageConflict {
+  left_index: number;
+  right_index: number;
+  left_quote: string;
+  right_quote: string;
+  overlap: number;
 }
 
 export interface Coverage {
@@ -53,6 +63,7 @@ export interface Coverage {
   missing_roles: string[];
   incomplete_reasons: string[];
   facet_plan: FacetPlanItem[];
+  conflicts: CoverageConflict[];
 }
 
 export interface SourcePayload {
@@ -66,9 +77,21 @@ export interface SourcePayload {
 export type ClaimSupport =
   | "supported"
   | "partial"
+  | "contradicted"
   | "unsupported"
   | "uncited"
-  | "unmapped";
+  | "unmapped"
+  | "evidence_gap";
+
+export interface EvidenceSpan {
+  index: number;
+  char_start: number;
+  char_end: number;
+  source_char_start?: number;
+  source_char_end?: number;
+  quote: string;
+  score: number;
+}
 
 export interface SentenceBinding {
   index: number;
@@ -78,6 +101,9 @@ export interface SentenceBinding {
   support: ClaimSupport;
   overlap: number;
   support_method: string;
+  kind: "fact" | "evidence_gap";
+  reason: string;
+  evidence_spans: EvidenceSpan[];
 }
 
 export interface CitationReport {
@@ -94,12 +120,26 @@ export interface CitationReport {
   support_counts: Record<string, number>;
 }
 
+export interface ThinkingItem {
+  label: string;
+  value: string;
+}
+
+export interface ThinkingNode {
+  id: string;
+  title: string;
+  status: "running" | "done" | "error";
+  summary: string;
+  items: ThinkingItem[];
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: SourcePayload;
   citations?: CitationReport;
+  thinking?: ThinkingNode[];
   mode?: string;
   pending?: boolean;
   stopped?: boolean;

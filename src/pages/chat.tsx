@@ -20,9 +20,11 @@ import type {
   CitationReport,
   ClaimSupport,
   ConditionPayload,
+  CoverageConflict,
   FacetPlanItem,
   SentenceBinding,
   SourcePayload,
+  ThinkingNode,
 } from "@/lib/types";
 
 const SUGGESTIONS = [
@@ -188,6 +190,25 @@ export function ChatPage() {
             sources: event.data as unknown as SourcePayload,
             mode: String(event.data.mode ?? ""),
           });
+        } else if (event.event === "thinking") {
+          const incoming = event.data as unknown as ThinkingNode;
+          setMessages((current) =>
+            current.map((message) => {
+              if (message.id !== assistantId) return message;
+              const nodes = message.thinking ?? [];
+              const at = nodes.findIndex((node) => node.id === incoming.id);
+              return {
+                ...message,
+                thinking:
+                  at >= 0
+                    ? nodes.map((node, index) => (index === at ? incoming : node))
+                    : [...nodes, incoming],
+              };
+            }),
+          );
+          if (incoming.status === "running") {
+            setAnnouncement(`${incoming.title}：${incoming.summary}`);
+          }
         } else if (event.event === "delta") {
           const text = String(event.data.text ?? "");
           setMessages((current) =>
@@ -407,6 +428,89 @@ export function ChatPage() {
   );
 }
 
+function ThinkingPanel({
+  nodes,
+  pending,
+}: {
+  nodes: ThinkingNode[];
+  pending?: boolean;
+}) {
+  const [open, setOpen] = useState(Boolean(pending));
+  useEffect(() => {
+    if (pending) setOpen(true);
+  }, [pending]);
+  if (!nodes.length) return null;
+  const active = nodes.find((node) => node.status === "running") ?? nodes[nodes.length - 1];
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="mt-3 rounded-tip border border-line-100 bg-n-150/40"
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-xs tracking-cn [&::-webkit-details-marker]:hidden">
+        {pending ? (
+          <Spinner className="size-3 text-primary" />
+        ) : (
+          <Icon name="check" className="h-3.5 w-3.5 text-success" />
+        )}
+        <span className="font-medium text-n-800">思考过程</span>
+        <span className="min-w-0 truncate text-n-550">
+          {active.title} · {active.summary}
+        </span>
+        <span className="ml-auto font-mono tracking-num text-n-450">
+          {nodes.length} 个节点
+        </span>
+        <Icon name="chevronDown" className="h-3.5 w-3.5 text-n-450" />
+      </summary>
+      <ol className="flex flex-col gap-2 border-t border-line-100 px-3 py-2.5">
+        {nodes.map((node, index) => (
+          <li key={node.id} className="flex gap-2">
+            <span className="mt-0.5 flex w-2 shrink-0 justify-center">
+              {node.status === "running" ? (
+                <Spinner className="size-2.5 text-primary" />
+              ) : node.status === "error" ? (
+                <Icon name="alert" className="h-3 w-3 text-danger" />
+              ) : (
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    index === nodes.length - 1 ? "bg-success" : "bg-n-450",
+                  )}
+                />
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-xs font-medium text-n-800">{node.title}</span>
+                <span className="text-[11px] text-n-450">
+                  {node.status === "running"
+                    ? "进行中"
+                    : node.status === "error"
+                      ? "失败"
+                      : "完成"}
+                </span>
+              </div>
+              <p className="text-xs leading-5 text-n-550">{node.summary}</p>
+              {node.items.length ? (
+                <dl className="mt-1 grid gap-x-3 gap-y-0.5 text-[11px] leading-4 sm:grid-cols-2">
+                  {node.items.map((item) => (
+                    <div key={`${node.id}-${item.label}`} className="flex min-w-0 gap-1">
+                      <dt className="shrink-0 text-n-450">{item.label}</dt>
+                      <dd className="min-w-0 truncate text-n-700" title={item.value}>
+                        {item.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 function AssistantMessage({
   message,
   onReuse,
@@ -427,6 +531,9 @@ function AssistantMessage({
       : []),
     ...(unbound.length
       ? [`证据未覆盖：${unbound.map((facet) => facet.label).join("、")}`]
+      : []),
+    ...(coverage?.conflicts?.length
+      ? [`证据间矛盾 ${coverage.conflicts.length} 处`]
       : []),
   ].join(" · ");
 
@@ -466,6 +573,8 @@ function AssistantMessage({
         </div>
       ) : null}
 
+      <ThinkingPanel nodes={message.thinking ?? []} pending={message.pending} />
+
       {message.content ? (
         <>
           <div className="mt-3">
@@ -475,6 +584,7 @@ function AssistantMessage({
             <CoverageAudit
               plan={plan}
               sentences={message.citations.sentences ?? []}
+              conflicts={coverage?.conflicts ?? []}
               supportMethod={message.citations.support_method}
             />
           ) : null}
@@ -560,22 +670,38 @@ const supportLabels: Partial<
 > = {
   supported: { label: "支持", className: "text-n-450" },
   partial: { label: "部分支持", className: "text-n-550" },
+  contradicted: { label: "与证据矛盾", className: "font-medium text-danger" },
   unsupported: { label: "无依据", className: "font-medium text-danger" },
+  evidence_gap: { label: "证据缺口", className: "text-n-550" },
 };
+
+function methodLabel(method?: string): string {
+  if (method === "llm-v1") return "LLM 判定";
+  if (method === "lexical-span-v2") return "词汇＋跨度代理";
+  return "词汇代理";
+}
 
 function CoverageAudit({
   plan,
   sentences,
+  conflicts,
   supportMethod,
 }: {
   plan: FacetPlanItem[];
   sentences: SentenceBinding[];
+  conflicts: CoverageConflict[];
   supportMethod?: string;
 }) {
   if (!plan.length && !sentences.length) return null;
   const uncited = sentences.filter((sentence) => sentence.status === "uncited").length;
   const unsupported = sentences.filter(
     (sentence) => sentence.support === "unsupported",
+  ).length;
+  const contradicted = sentences.filter(
+    (sentence) => sentence.support === "contradicted",
+  ).length;
+  const evidenceGap = sentences.filter(
+    (sentence) => sentence.support === "evidence_gap",
   ).length;
   return (
     <div className="mt-4 grid gap-3 border-t border-line-100 pt-3 sm:grid-cols-2">
@@ -596,10 +722,38 @@ function CoverageAudit({
                   {facet.label}
                 </span>
                 <span className="font-mono tracking-num text-n-450">
-                  {facet.evidence_indices.length
-                    ? facet.evidence_indices.map((index) => `E${index}`).join("、")
-                    : "无候选证据"}
+                  {facet.primary_indices?.length
+                    ? `主 ${facet.primary_indices.map((index) => `E${index}`).join("、")}`
+                    : ""}
+                  {facet.primary_indices?.length && facet.supporting_indices?.length
+                    ? " · "
+                    : ""}
+                  {facet.supporting_indices?.length
+                    ? `辅 ${facet.supporting_indices.map((index) => `E${index}`).join("、")}`
+                    : ""}
+                  {!facet.evidence_indices.length ? "无候选证据" : ""}
                 </span>
+                {facet.status === "partial" ? (
+                  <span className="text-[11px] text-n-450">仅辅助证据</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {conflicts.length ? (
+        <div className="sm:col-span-2">
+          <p className="text-xs font-medium tracking-cn text-danger">
+            证据间潜在矛盾（需并列呈现）
+          </p>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {conflicts.map((conflict, index) => (
+              <li key={`${conflict.left_index}-${conflict.right_index}-${index}`} className="text-xs leading-5 text-n-700">
+                <span className="font-mono text-primary">
+                  E{conflict.left_index} vs E{conflict.right_index}
+                </span>{" "}
+                ：{conflict.left_quote} ↔ {conflict.right_quote}
               </li>
             ))}
           </ul>
@@ -610,9 +764,10 @@ function CoverageAudit({
         <div>
           <p className="text-xs font-medium tracking-cn text-n-550">
             结论-证据核对（
-            {supportMethod === "llm-v1" ? "LLM 判定" : "词汇代理"}）· 未标注{" "}
-            {uncited} 条
+            {methodLabel(supportMethod)}）· 未标注 {uncited} 条
             {unsupported ? ` · 无依据 ${unsupported} 条` : ""}
+            {contradicted ? ` · 矛盾 ${contradicted} 条` : ""}
+            {evidenceGap ? ` · 证据缺口 ${evidenceGap} 条` : ""}
           </p>
           <ul className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-auto pr-1">
             {sentences.map((sentence) => (
@@ -627,7 +782,7 @@ function CoverageAudit({
                     ? sentence.citations.map((index) => `E${index}`).join(" ")
                     : "—"}
                 </span>
-                <span
+                <div
                   className={cn(
                     "min-w-0",
                     sentence.status === "uncited" ? "text-n-550" : "text-n-700",
@@ -644,7 +799,27 @@ function CoverageAudit({
                       〔{supportLabels[sentence.support]?.label}〕
                     </span>
                   ) : null}
-                </span>
+                  {sentence.evidence_spans?.length ? (
+                    <details className="mt-0.5">
+                      <summary className="cursor-pointer text-[11px] tracking-cn text-primary underline-offset-2 hover:underline">
+                        证据跨度 {sentence.evidence_spans.length} 处
+                      </summary>
+                      <ul className="mt-1 flex flex-col gap-1 pl-3 text-[11px] leading-4 text-n-550">
+                        {sentence.evidence_spans.map((span) => (
+                          <li key={`${sentence.index}-${span.index}-${span.char_start}`}>
+                            <span className="font-mono tracking-num text-primary">
+                              E{span.index}
+                            </span>{" "}
+                            <span className="font-mono tracking-num text-n-450">
+                              [{span.char_start},{span.char_end})
+                            </span>
+                            ：{span.quote}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -657,7 +832,9 @@ function CoverageAudit({
 function CitationStatus({ citations }: { citations: CitationReport }) {
   const uncited = citations.uncited_count ?? 0;
   const unsupported = citations.support_counts?.unsupported ?? 0;
-  const proxy = citations.support_method === "llm-v1" ? "LLM" : "词汇";
+  const contradicted = citations.support_counts?.contradicted ?? 0;
+  const evidenceGap = citations.support_counts?.evidence_gap ?? 0;
+  const proxy = methodLabel(citations.support_method);
   if (citations.status === "mapped") {
     return (
       <>
@@ -669,6 +846,14 @@ function CitationStatus({ citations }: { citations: CitationReport }) {
           <StatusChip tone="danger">
             {unsupported} 条断言无证据支持（{proxy}）
           </StatusChip>
+        ) : null}
+        {contradicted ? (
+          <StatusChip tone="danger">
+            {contradicted} 条断言与证据矛盾（{proxy}）
+          </StatusChip>
+        ) : null}
+        {evidenceGap ? (
+          <StatusChip>{evidenceGap} 条证据缺口说明</StatusChip>
         ) : null}
       </>
     );
